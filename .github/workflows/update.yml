@@ -1,0 +1,28 @@
+name: Auto Update Packages
+
+on:
+  schedule:
+    - cron: '0 20 * * *' # 每天北京时间凌晨 4 点运行 (UTC 20:00)
+  workflow_dispatch:      # 允许手动点击运行
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Run Sync Script
+        run: |
+          chmod +x sync.sh
+          ./sync.sh
+
+      - name: Commit and Push
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git add .
+          # 只有在有变动时才提交，防止报错
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update packages at $(date +'%Y-%m-%d %H:%M:%S')" && git push)
