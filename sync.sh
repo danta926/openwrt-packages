@@ -1,50 +1,33 @@
 #!/bin/bash
-set -euo pipefail
 
-# 临时目录
-TEMP_DIR="temp"
-
-# 创建临时目录
-mkdir -p "${TEMP_DIR}"
-
-# 同步插件函数（直接输出到当前根目录）
+# 定义同步函数
 sync_pkg() {
-    local REPO_URL="$1"
-    local PKG_PATH="$2"
-    local LOCAL_NAME="$3"
+    REPO_URL=$1
+    SRC_PATH=$2
+    LOCAL_NAME=$3
 
-    echo -e "\n========================================"
-    echo "开始同步: ${LOCAL_NAME}"
-    echo -e "========================================\n"
-
-    # 稀疏克隆
-    git clone --depth 1 --filter=blob:none --sparse "${REPO_URL}" "${TEMP_DIR}/${LOCAL_NAME}"
-    cd "${TEMP_DIR}/${LOCAL_NAME}"
-    git sparse-checkout set "${PKG_PATH}"
-    cd - > /dev/null
-
-    # 直接复制到当前根目录
-    rm -rf "./${LOCAL_NAME}"
-    cp -rf "${TEMP_DIR}/${LOCAL_NAME}/${PKG_PATH}" "./${LOCAL_NAME}"
-
-    echo -e "✅ ${LOCAL_NAME} 同步完成！"
+    echo "正在拉取: $LOCAL_NAME"
+    # 创建独立临时文件夹，防止冲突
+    TMP_DIR="temp_$LOCAL_NAME"
+    git clone --depth 1 $REPO_URL $TMP_DIR
+    
+    # 核心修复：检查路径并拷贝
+    if [ -d "$TMP_DIR/$SRC_PATH" ]; then
+        rm -rf "$LOCAL_NAME"
+        cp -rf "$TMP_DIR/$SRC_PATH" "$LOCAL_NAME"
+        echo "✅ $LOCAL_NAME 同步成功"
+    else
+        echo "❌ 错误：找不到路径 $SRC_PATH"
+        exit 1
+    fi
+    rm -rf "$TMP_DIR"
 }
 
-# ===================== 插件列表 =====================
-# OpenClash
-sync_pkg \
-    "https://github.com/vernesong/OpenClash.git" \
-    "luci-app-openclash" \
-    "luci-app-openclash"
+# --- 这里是你的插件配置区 ---
+# OpenClash 路径没问题
+sync_pkg "https://github.com/vernesong/OpenClash.git" "luci-app-openclash" "luci-app-openclash"
 
-# ddns-go
-sync_pkg \
-    "https://github.com/jeessy2/ddns-go.git" \
-    "openwrt" \
-    "luci-app-ddns-go"
-# ======================================================
+# ddns-go 路径必须修正为这个：
+sync_pkg "https://github.com/jeessy2/ddns-go.git" "openwrt/luci-app-ddns-go" "luci-app-ddns-go"
 
-# 清理临时文件
-rm -rf "${TEMP_DIR}"
-
-echo -e "\n🎉 所有插件已同步到当前根目录！"
+echo "所有同步任务完成！"
