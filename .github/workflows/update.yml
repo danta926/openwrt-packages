@@ -2,7 +2,7 @@ name: Update Plugins
 
 on:
   schedule:
-    - cron: '0 0 * * *' # 每天凌晨自动运行
+    - cron: '10 16 * * *' # 每天凌晨自动运行
   workflow_dispatch:      # 也可以手动点击按钮运行
 
 jobs:
