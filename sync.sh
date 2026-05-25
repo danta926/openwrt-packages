@@ -46,19 +46,23 @@ echo "package/emortal" >> .git/info/sparse-checkout
 git remote add origin https://github.com/immortalwrt/immortalwrt
 git pull origin v25.12.0 --depth 1 -q
 
-# 5. 回到上级根目录，将下载下来的插件平铺移出来
+# 5. 回到上级根目录
 cd ..
+
+# 6. 提取并移动到指定的 emortal 文件夹中
 if [ -d ".tmp_immortalwrt/package/emortal" ]; then
-    # 把 emortal 目录下的所有子插件移到根目录
-    mv .tmp_immortalwrt/package/emortal/* ./
-    echo "✅ emortal 文件夹内的核心插件已成功提取并平铺！"
+    # 先在本地根目录下创建独立的 emortal 文件夹
+    mkdir -p emortal
+    # 把下载下来的插件，平铺移动到本地的 emortal 目录中
+    mv .tmp_immortalwrt/package/emortal/* ./emortal/
+    echo "✅ emortal 文件夹内的核心插件已成功提取并平铺在 ./emortal/ 目录中！"
 else
     echo "❌ emortal 文件夹同步失败，请检查网络！"
 fi
 
-# 6. 清理临时遗留的隐藏文件和文件夹
+# 7. 清理临时遗留的隐藏文件和文件夹
 rm -rf .tmp_immortalwrt
 
 echo "------------------------------------------"
-echo "所有插件已成功平铺在根目录！"
+echo "所有插件处理完毕！"
 exit 0
