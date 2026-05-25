@@ -7,7 +7,7 @@ declare -A PROJECTS=(
     ["https://github.com/sirpdboy/luci-app-ddns-go"]="luci-app-ddns-go"
     ["https://github.com/ophub/luci-app-amlogic"]="luci-app-amlogic"
     ["https://github.com/jerrykuku/luci-theme-argon"]="luci-theme-argon"
-    [https://github.com/jerrykuku/luci-app-argon-config"]="luci-app-argon-config"
+    ["https://github.com/jerrykuku/luci-app-argon-config"]="luci-app-argon-config"
 )
 
 echo "开始清理旧文件..."
