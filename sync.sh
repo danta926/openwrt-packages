@@ -9,13 +9,6 @@ declare -A PROJECTS=(
     ["https://github.com/jerrykuku/luci-app-argon-config"]="luci-app-argon-config"
 )
 
-# 2. 声明需要提取“大仓库中某个子文件夹并平铺”的项目
-# 格式: 远程仓库地址 | 分支或Tag | 子文件夹路径
-# 这里配置的就是你要的 immortalwrt 25.12.0 的 emortal 核心组件包
-SUB_PROJECTS=(
-    "https://github.com/immortalwrt/immortalwrt|v25.12.0|package/emortal"
-)
-
 echo "开始清理旧文件..."
 # 仅保留 .git, .github 和 脚本本身，删除其他所有根目录下的文件夹和文件
 find . -maxdepth 1 ! -name '.' ! -name '..' ! -name '.git' ! -name '.github' ! -name 'sync.sh' -exec rm -rf {} +
@@ -26,10 +19,8 @@ for repo in "${!PROJECTS[@]}"; do
     echo "------------------------------------------"
     echo "正在克隆: $dir_name"
     
-    # 克隆项目到指定名称的文件夹
     git clone --depth 1 "$repo" "$dir_name"
     
-    # 移除插件内部的 .git 信息，防止 git 嵌套冲突
     if [ -d "$dir_name" ]; then
         rm -rf "$dir_name/.git" "$dir_name/.github"
         echo "✅ $dir_name 已就绪"
@@ -39,33 +30,34 @@ for repo in "${!PROJECTS[@]}"; do
 done
 
 echo "------------------------------------------"
-echo "开始提取大仓库指定分支的子文件夹..."
+echo "开始拉取 immortalwrt v25.12.0 的 emortal 文件夹..."
 
-for item in "${SUB_PROJECTS[@]}"; do
-    # 解析仓库地址、分支和子路径
-    IFS="|" read -r url branch sub_path <<< "$item"
-    
-    echo "------------------------------------------"
-    echo "正在从 $url ($branch) 提取 $sub_path ..."
-    
-    # 创建一个临时目录用来接收数据
-    mkdir -p .tmp_extract
-    
-    # 利用 git archive 远程下载指定分支下的指定目录（格式为 tar 包，不带任何历史记录，速度极快）
-    git archive --remote="$url" "$branch" "$sub_path" | tar -x -C .tmp_extract
-    
-    # 检查是否成功下载
-    if [ -d ".tmp_extract/$sub_path" ]; then
-        # 将子文件夹内的所有核心插件（如 luci-app-xxx）移动、平铺到当前根目录
-        mv .tmp_extract/$sub_path/* ./
-        echo "✅ $sub_path 内的所有核心插件已成功提取并平铺！"
-    else
-        echo "❌ $sub_path 提取失败，请检查网络或分支/路径是否正确"
-    fi
-    
-    # 清理临时目录
-    rm -rf .tmp_extract
-done
+# 1. 创建一个临时的裸仓库目录，并进入
+mkdir -p .tmp_immortalwrt && cd .tmp_immortalwrt
+
+# 2. 初始化 git 并开启稀疏检出（只下载指定文件夹的核心功能）
+git init -q
+git config core.sparseCheckout true
+
+# 3. 设置只下载 package/emortal 目录
+echo "package/emortal" >> .git/info/sparse-checkout
+
+# 4. 添加远程源并拉取指定分支（使用 --depth 1 极大限度减少下载量）
+git remote add origin https://github.com/immortalwrt/immortalwrt
+git pull origin v25.12.0 --depth 1 -q
+
+# 5. 回到上级根目录，将下载下来的插件平铺移出来
+cd ..
+if [ -d ".tmp_immortalwrt/package/emortal" ]; then
+    # 把 emortal 目录下的所有子插件移到根目录
+    mv .tmp_immortalwrt/package/emortal/* ./
+    echo "✅ emortal 文件夹内的核心插件已成功提取并平铺！"
+else
+    echo "❌ emortal 文件夹同步失败，请检查网络！"
+fi
+
+# 6. 清理临时遗留的隐藏文件和文件夹
+rm -rf .tmp_immortalwrt
 
 echo "------------------------------------------"
 echo "所有插件已成功平铺在根目录！"
