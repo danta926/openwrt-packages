@@ -3,7 +3,6 @@
 # 1. 声明普通的、需要整仓克隆的项目 (格式: ["远程仓库地址"]="本地文件夹名")
 declare -A PROJECTS=(
     ["https://github.com/vernesong/OpenClash"]="luci-app-openclash"
-    ["https://github.com/sirpdboy/luci-app-ddns-go"]="luci-app-ddns-go"
     ["https://github.com/ophub/luci-app-amlogic"]="luci-app-amlogic"
     ["https://github.com/jerrykuku/luci-theme-argon"]="luci-theme-argon"
     ["https://github.com/jerrykuku/luci-app-argon-config"]="luci-app-argon-config"
@@ -33,36 +32,58 @@ done
 echo "------------------------------------------"
 echo "开始拉取 immortalwrt v25.12.0 的 emortal 文件夹..."
 
-# 1. 创建一个临时的裸仓库目录，并进入
+# 创建临时的裸仓库目录，并进入
 mkdir -p .tmp_immortalwrt && cd .tmp_immortalwrt
-
-# 2. 初始化 git 并开启稀疏检出（只下载指定文件夹的核心功能）
 git init -q
 git config core.sparseCheckout true
-
-# 3. 设置只下载 package/emortal 目录
 echo "package/emortal" >> .git/info/sparse-checkout
-
-# 4. 添加远程源并拉取指定分支（使用 --depth 1 极大限度减少下载量）
 git remote add origin https://github.com/immortalwrt/immortalwrt
 git pull origin v25.12.0 --depth 1 -q
-
-# 5. 回到上级根目录
 cd ..
 
-# 6. 提取并移动到指定的 emortal 文件夹中
+# 提取并移动
 if [ -d ".tmp_immortalwrt/package/emortal" ]; then
-    # 先在本地根目录下创建独立的 emortal 文件夹
     mkdir -p emortal
-    # 把下载下来的插件，平铺移动到本地的 emortal 目录中
     mv .tmp_immortalwrt/package/emortal/* ./emortal/
     echo "✅ emortal 文件夹内的核心插件已成功提取并平铺在 ./emortal/ 目录中！"
 else
     echo "❌ emortal 文件夹同步失败，请检查网络！"
 fi
-
-# 7. 清理临时遗留的隐藏文件和文件夹
 rm -rf .tmp_immortalwrt
+
+
+echo "------------------------------------------"
+echo "开始按需拉取 kenzok8 中的插件并【平铺到根目录】..."
+
+# 1. 创建临时区
+mkdir -p .tmp_kenzok8 && cd .tmp_kenzok8
+git init -q
+git config core.sparseCheckout true
+
+# 2. 写入要拉取的三个插件
+echo "ddns-go" >> .git/info/sparse-checkout
+echo "luci-app-ddns-go" >> .git/info/sparse-checkout
+echo "luci-app-dockerman" >> .git/info/sparse-checkout
+
+# 3. 拉取核心数据
+git remote add origin https://github.com/kenzok8/openwrt-packages
+git pull origin master --depth 1 -q
+cd ..
+
+# 4. 核心：直接【平铺移动到当前根目录】
+for folder in "ddns-go" "luci-app-ddns-go" "luci-app-dockerman"; do
+    if [ -d ".tmp_kenzok8/$folder" ]; then
+        # mv 到 ./ 即代表当前脚本所在的根目录
+        mv ".tmp_kenzok8/$folder" ./
+        echo "✅ [根目录] $folder 已经成功平铺到根目录！"
+    else
+        echo "❌ [失败] 未能提取到 $folder，请检查网络或仓库目录名"
+    fi
+done
+
+# 5. 清理临时缓存
+rm -rf .tmp_kenzok8
+
 
 echo "------------------------------------------"
 echo "所有插件处理完毕！"
