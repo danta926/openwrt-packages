@@ -1,13 +1,16 @@
 #!/bin/bash
 # ==============================================================================
-# 修复说明：
-# 1. 将 git pull --filter 拆解为 git fetch --filter + git checkout，解决兼容性报错。
-# 2. 依然保留强大的多线程并发与 PID 追踪机制，速度依然起飞。
+# 终极一体化脚本优化要点：
+# 1. 自动定位、注释 feeds.conf.default 中的旧源，并安全追加 24.10 的四个新源。
+# 2. 修复 git pull --filter 带来的旧版本 Git 兼容性大坑。
+# 3. 保留高并发多线程同步，整仓克隆与稀疏拉取同步进行，速度起飞。
+# 4. 已移除 luci-app-samba4 与 luci-app-hd-idle 稀疏同步。
 # ==============================================================================
 
 set -uo pipefail
 
 # ==================== 配置区 ====================
+# 1. 声明普通整仓项目
 declare -A FULL_PROJECTS=(
     ["https://github.com/vernesong/OpenClash"]="luci-app-openclash"
     ["https://github.com/ophub/luci-app-amlogic"]="luci-app-amlogic"
@@ -16,13 +19,14 @@ declare -A FULL_PROJECTS=(
     ["https://github.com/lisaac/luci-app-diskman"]="luci-app-diskman"
 )
 
+# 2. 声明稀疏检出大仓项目（已删除 immortalwrt/luci 整行）
 declare -A SPARSE_ITEMS=(
     ["https://github.com/immortalwrt/immortalwrt v25.12.0"]="package/emortal -> emortal"
     ["https://github.com/kenzok8/openwrt-packages master"]="ddns-go luci-app-ddns-go luci-app-dockerman -> ."
-    ["https://github.com/immortalwrt/luci openwrt-24.10"]="applications/luci-app-hd-idle applications/luci-app-samba4 -> ."
 )
 
 ROOT_DIR="$(pwd)"
+FEEDS_FILE="feeds.conf.default" # 如果你使用的是 feeds.conf，可以改成 "feeds.conf"
 
 # ==================== 函数定义 ====================
 clone_full_repo() {
@@ -46,20 +50,16 @@ sparse_checkout() {
     local tmp_dir
     tmp_dir=$(mktemp -d -t "sparse_XXXXXX")
     
-    # 使用子 Shell 隔离环境
     (
         cd "$tmp_dir" || exit 1
         git init -q
         git config core.sparseCheckout true
         
-        # 写入需要检出的路径
         for p in $paths; do
             echo "$p" >> .git/info/sparse-checkout
         done
         
         git remote add origin "$repo"
-        
-        # 【核心修复点】改用 fetch 配合 --filter=blob:none，完美兼容新旧 Git 版本
         git fetch origin "$branch" --depth 1 --filter=blob:none -q && git checkout -q FETCH_HEAD
     )
     
@@ -101,9 +101,39 @@ sparse_checkout() {
 }
 
 # ==================== 主流程 ====================
-echo "🧹 开始清理旧文件..."
+
+# ----------------- Feeds 修改逻辑 -----------------
+if [ -f "$FEEDS_FILE" ]; then
+    echo "⚙️  发现 $FEEDS_FILE，正在更新 Feeds 仓库源..."
+    
+    # 1. 使用 sed 注释掉原本的 packages, luci, routing, telephony 行（避免重复冲突）
+    sed -i '/src-git packages/s/^/#/' "$FEEDS_FILE"
+    sed -i '/src-git luci/s/^/#/' "$FEEDS_FILE"
+    sed -i '/src-git routing/s/^/#/' "$FEEDS_FILE"
+    sed -i '/src-git telephony/s/^/#/' "$FEEDS_FILE"
+
+    # 2. 清理上一次运行可能残留的追加块，防止多次运行脚本导致文件无限膨胀
+    sed -i '/# === CUSTOM OPENWRT 24.10 FEEDS ===/,/# === END CUSTOM FEEDS ===/d' "$FEEDS_FILE"
+
+    # 3. 追加你提供的新 24.10 仓库源
+    cat >> "$FEEDS_FILE" <<EOF
+# === CUSTOM OPENWRT 24.10 FEEDS ===
+src-git packages https://github.com/openwrt/packages.git;openwrt-24.10
+src-git luci https://github.com/danta926/luci.git;openwrt-24.10
+src-git routing https://github.com/openwrt/routing.git;openwrt-24.10
+src-git telephony https://github.com/openwrt/telephony.git;openwrt-24.10
+# === END CUSTOM FEEDS ===
+EOF
+    echo "✅ Feeds 仓库源已成功切换为 OpenWrt-24.10 分支（包含 danta926 自定义LuCI）"
+else
+    echo "⚠️  未在当前目录下找到 $FEEDS_FILE，跳过 Feeds 修改。"
+fi
+echo "------------------------------------------"
+
+# ----------------- 插件清理与并发下载 -----------------
+echo "🧹 开始清理旧插件文件..."
 find . -maxdepth 1 ! -name '.' ! -name '..' \
-    ! -name '.git' ! -name '.github' \
+    ! -name '.git' ! -name '.github' ! -name "$FEEDS_FILE" \
     ! -name "$(basename "$0")" -exec rm -rf {} +
 
 echo "------------------------------------------"
@@ -146,6 +176,6 @@ if [ $FAILED -eq 1 ]; then
     echo "❌ 同步过程中部分插件出错，请检查上方日志！"
     exit 1
 else
-    echo "🎉 所有插件并行处理完毕，完美成功！"
+    echo "🎉 所有 Feeds 修改和插件并行处理完毕，完美成功！"
     exit 0
 fi
