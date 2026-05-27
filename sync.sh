@@ -1,7 +1,9 @@
 #!/bin/bash
+set -euo pipefail  # 出错即停、未定义变量报错、管道错误传递
 
-# 1. 声明普通的、需要整仓克隆的项目 (格式: ["远程仓库地址"]="本地文件夹名")
-declare -A PROJECTS=(
+# ==================== 配置区 ====================
+# 声明普通整仓项目 (地址 -> 本地目录名)
+declare -A FULL_PROJECTS=(
     ["https://github.com/vernesong/OpenClash"]="luci-app-openclash"
     ["https://github.com/ophub/luci-app-amlogic"]="luci-app-amlogic"
     ["https://github.com/jerrykuku/luci-theme-argon"]="luci-theme-argon"
@@ -9,81 +11,109 @@ declare -A PROJECTS=(
     ["https://github.com/lisaac/luci-app-diskman"]="luci-app-diskman"
 )
 
+# 定义需要稀疏检出的仓库 (仓库URL 分支 要提取的目录/文件列表 目标本地目录)
+# 格式：["仓库URL 分支"]="路径1 路径2 ... -> 目标目录"
+declare -A SPARSE_ITEMS=(
+    ["https://github.com/immortalwrt/immortalwrt v25.12.0"]="package/emortal -> emortal"
+    ["https://github.com/kenzok8/openwrt-packages master"]="ddns-go luci-app-ddns-go luci-app-dockerman -> ."
+    ["https://github.com/immortalwrt/luci openwrt-24.10"]="applications/luci-app-hd-idle applications/luci-app-samba4 -> ."
+)
+
+# ==================== 函数定义 ====================
+# 普通全量克隆（整仓）
+clone_full_repo() {
+    local repo="$1"
+    local target="$2"
+    echo "克隆全仓: $target"
+    git clone --depth 1 "$repo" "$target"
+    if [[ -d "$target" ]]; then
+        rm -rf "$target/.git" "$target/.github"
+        echo "✅ $target 已就绪"
+    else
+        echo "❌ $target 克隆失败"
+        return 1
+    fi
+}
+
+# 稀疏检出并移动到指定位置
+# 参数: repo_url branch "path1 path2 ..." target_dir
+sparse_checkout() {
+    local repo="$1"
+    local branch="$2"
+    local paths="$3"      # 空格分隔的路径列表（相对于仓库根）
+    local target_dir="$4"
+
+    local tmp_dir
+    tmp_dir=$(mktemp -d -t "sparse_$(basename "$repo")_XXXXXX")
+    echo "稀疏检出: ${target_dir:-根目录} <- ${paths} (from $repo $branch)"
+
+    pushd "$tmp_dir" > /dev/null
+    git init -q
+    git config core.sparseCheckout true
+    # 写入所有需要检出的路径
+    for p in $paths; do
+        echo "$p" >> .git/info/sparse-checkout
+    done
+    git remote add origin "$repo"
+    git pull origin "$branch" --depth 1 -q
+    popd > /dev/null
+
+    # 移动结果到目标目录
+    if [[ "$target_dir" == "." ]]; then
+        # 平铺到当前根目录
+        for p in $paths; do
+            local src_path="$tmp_dir/$p"
+            local basename=$(basename "$p")
+            if [[ -e "$src_path" ]]; then
+                mv "$src_path" "./$basename"
+                echo "✅ 移动 ./$basename"
+            else
+                echo "❌ 未找到 $p"
+            fi
+        done
+    else
+        # 移动到指定子目录（如 emortal）
+        mkdir -p "$target_dir"
+        for p in $paths; do
+            local src_path="$tmp_dir/$p"
+            if [[ -e "$src_path" ]]; then
+                cp -r "$src_path/"* "$target_dir/" 2>/dev/null || \
+                cp -r "$src_path" "$target_dir/"
+                echo "✅ 已复制 $p 内容到 $target_dir"
+            else
+                echo "❌ 未找到 $p"
+            fi
+        done
+    fi
+
+    rm -rf "$tmp_dir"
+}
+
+# ==================== 主流程 ====================
+# 清理旧文件（保留 .git .github 和本脚本）
 echo "开始清理旧文件..."
-# 仅保留 .git, .github 和 脚本本身，删除其他所有根目录下的文件夹和文件
-find . -maxdepth 1 ! -name '.' ! -name '..' ! -name '.git' ! -name '.github' ! -name 'sync.sh' -exec rm -rf {} +
+find . -maxdepth 1 ! -name '.' ! -name '..' \
+    ! -name '.git' ! -name '.github' \
+    ! -name "$(basename "$0")" -exec rm -rf {} +
 
-echo "开始同步普通整仓插件到根目录..."
-for repo in "${!PROJECTS[@]}"; do
-    dir_name="${PROJECTS[$repo]}"
+# 1. 处理全量克隆项目
+echo "开始同步普通整仓插件..."
+for repo in "${!FULL_PROJECTS[@]}"; do
+    dir_name="${FULL_PROJECTS[$repo]}"
     echo "------------------------------------------"
-    echo "正在克隆: $dir_name"
-    
-    git clone --depth 1 "$repo" "$dir_name"
-    
-    if [ -d "$dir_name" ]; then
-        rm -rf "$dir_name/.git" "$dir_name/.github"
-        echo "✅ $dir_name 已就绪"
-    else
-        echo "❌ $dir_name 克隆失败"
-    fi
+    clone_full_repo "$repo" "$dir_name"
 done
 
-echo "------------------------------------------"
-echo "开始拉取 immortalwrt v25.12.0 的 emortal 文件夹..."
-
-# 创建临时的裸仓库目录，并进入
-mkdir -p .tmp_immortalwrt && cd .tmp_immortalwrt
-git init -q
-git config core.sparseCheckout true
-echo "package/emortal" >> .git/info/sparse-checkout
-git remote add origin https://github.com/immortalwrt/immortalwrt
-git pull origin v25.12.0 --depth 1 -q
-cd ..
-
-# 提取并移动
-if [ -d ".tmp_immortalwrt/package/emortal" ]; then
-    mkdir -p emortal
-    mv .tmp_immortalwrt/package/emortal/* ./emortal/
-    echo "✅ emortal 文件夹内的核心插件已成功提取并平铺在 ./emortal/ 目录中！"
-else
-    echo "❌ emortal 文件夹同步失败，请检查网络！"
-fi
-rm -rf .tmp_immortalwrt
-
-
-echo "------------------------------------------"
-echo "开始按需拉取 kenzok8 中的插件并【平铺到根目录】..."
-
-# 1. 创建临时区
-mkdir -p .tmp_kenzok8 && cd .tmp_kenzok8
-git init -q
-git config core.sparseCheckout true
-
-# 2. 写入要拉取的三个插件
-echo "ddns-go" >> .git/info/sparse-checkout
-echo "luci-app-ddns-go" >> .git/info/sparse-checkout
-echo "luci-app-dockerman" >> .git/info/sparse-checkout
-
-# 3. 拉取核心数据
-git remote add origin https://github.com/kenzok8/openwrt-packages
-git pull origin master --depth 1 -q
-cd ..
-
-# 4. 核心：直接【平铺移动到当前根目录】
-for folder in "ddns-go" "luci-app-ddns-go" "luci-app-dockerman"; do
-    if [ -d ".tmp_kenzok8/$folder" ]; then
-        # mv 到 ./ 即代表当前脚本所在的根目录
-        mv ".tmp_kenzok8/$folder" ./
-        echo "✅ [根目录] $folder 已经成功平铺到根目录！"
-    else
-        echo "❌ [失败] 未能提取到 $folder，请检查网络或仓库目录名"
-    fi
+# 2. 处理所有稀疏检出项目
+for key in "${!SPARSE_ITEMS[@]}"; do
+    IFS=' ' read -r repo branch <<< "$key"
+    target_spec="${SPARSE_ITEMS[$key]}"
+    # 解析 "路径列表 -> 目标目录"
+    paths_part="${target_spec% -> *}"
+    target_part="${target_spec#* -> }"
+    echo "------------------------------------------"
+    sparse_checkout "$repo" "$branch" "$paths_part" "$target_part"
 done
-
-# 5. 清理临时缓存
-rm -rf .tmp_kenzok8
-
 
 echo "------------------------------------------"
 echo "所有插件处理完毕！"
