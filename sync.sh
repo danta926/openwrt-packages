@@ -1,12 +1,11 @@
 #!/bin/bash
 # ==============================================================================
-# 优化要点：
-# 1. 引入多进程并发 (Wait 机制)，让 8 个任务同时下载，时间缩短到原来的 1/4。
-# 2. 引入 --filter=blob:none，只下载目录树，不下载历史二进制文件，大幅削减流量。
-# 3. 规范错误收集，即使并行运行，任何一个子线程失败也会最终报错，拒绝“假成功”。
+# 修复说明：
+# 1. 将 git pull --filter 拆解为 git fetch --filter + git checkout，解决兼容性报错。
+# 2. 依然保留强大的多线程并发与 PID 追踪机制，速度依然起飞。
 # ==============================================================================
 
-set -uo pipefail  # 并行模式下，移除 -e，改用进程退出码状态数组控制中断
+set -uo pipefail
 
 # ==================== 配置区 ====================
 declare -A FULL_PROJECTS=(
@@ -30,7 +29,6 @@ clone_full_repo() {
     local repo="$1" target="$2"
     echo "🚀 [并发启动] 开始整仓克隆: $target"
     
-    # 增加 --filter=blob:none 减少无用历史对象下载
     if git clone --depth 1 --filter=blob:none "$repo" "$target" -q; then
         rm -rf "$target/.git" "$target/.github"
         echo "✅ [整仓就绪] $target"
@@ -48,20 +46,21 @@ sparse_checkout() {
     local tmp_dir
     tmp_dir=$(mktemp -d -t "sparse_XXXXXX")
     
-    # 使用子 Shell 保护环境，避免 cd 污染
+    # 使用子 Shell 隔离环境
     (
-        cd "$tmp_dir"
+        cd "$tmp_dir" || exit 1
         git init -q
         git config core.sparseCheckout true
         
-        # 安全按行解开路径
+        # 写入需要检出的路径
         for p in $paths; do
             echo "$p" >> .git/info/sparse-checkout
         done
         
         git remote add origin "$repo"
-        # 核心优化：深度1 + 过滤blob
-        git pull origin "$branch" --depth 1 --filter=blob:none -q
+        
+        # 【核心修复点】改用 fetch 配合 --filter=blob:none，完美兼容新旧 Git 版本
+        git fetch origin "$branch" --depth 1 --filter=blob:none -q && git checkout -q FETCH_HEAD
     )
     
     if [ $? -ne 0 ]; then
@@ -77,7 +76,6 @@ sparse_checkout() {
             local bname
             bname=$(basename "$p")
             if [[ -e "$src_path" ]]; then
-                # 如果目的地已存在旧文件夹，先清理
                 rm -rf "$ROOT_DIR/$bname"
                 mv "$src_path" "$ROOT_DIR/$bname"
                 echo "   📦 平铺成功: ./$bname"
@@ -112,17 +110,16 @@ echo "------------------------------------------"
 echo "📥 正在并行同步所有插件，请稍候..."
 echo "------------------------------------------"
 
-# 建立后台进程 PID 追踪数组
 declare -A PIDS
 
-# 1. 发射整仓克隆任务到后台
+# 1. 后台整仓克隆
 for repo in "${!FULL_PROJECTS[@]}"; do
     dir_name="${FULL_PROJECTS[$repo]}"
     clone_full_repo "$repo" "$dir_name" &
     PIDS[$!]="$dir_name (整仓)"
 done
 
-# 2. 发射稀疏检出任务到后台
+# 2. 后台稀疏检出
 for key in "${!SPARSE_ITEMS[@]}"; do
     IFS=' ' read -r repo branch <<< "$key"
     target_spec="${SPARSE_ITEMS[$key]}"
