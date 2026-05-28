@@ -24,8 +24,6 @@ declare -A FULL_PROJECTS=(
 #              拆分为三个独立源，其中 ddns-go 和 luci-app-ddns-go 改用 immortalwrt 官方源。
 declare -A SPARSE_ITEMS=(
     ["https://github.com/immortalwrt/immortalwrt v25.12.0"]="package/emortal -> emortal"
-    # 保留：luci-app-dockerman 仍从 kenzok8 拉取
-    ["https://github.com/kenzok8/openwrt-packages master"]="luci-app-dockerman -> ."
 )
 
 ROOT_DIR="$(pwd)"
