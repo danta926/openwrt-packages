@@ -19,14 +19,21 @@ declare -A FULL_PROJECTS=(
     ["https://github.com/lisaac/luci-app-diskman"]="luci-app-diskman"
 )
 
-# 2. 声明稀疏检出大仓项目（已删除 immortalwrt/luci 整行）
+# 2. 声明稀疏检出大仓项目
+#    修改说明：将原来从 kenzok8 一次性拉取 ddns-go、luci-app-ddns-go、luci-app-dockerman 的方式，
+#              拆分为三个独立源，其中 ddns-go 和 luci-app-ddns-go 改用 immortalwrt 官方源。
 declare -A SPARSE_ITEMS=(
     ["https://github.com/immortalwrt/immortalwrt v25.12.0"]="package/emortal -> emortal"
-    ["https://github.com/kenzok8/openwrt-packages master"]="ddns-go luci-app-ddns-go luci-app-dockerman -> ."
+    # 新增：ddns-go 来自 immortalwrt/packages
+    ["https://github.com/immortalwrt/packages.git openwrt-24.10"]="net/ddns-go -> ."
+    # 新增：luci-app-ddns-go 来自 immortalwrt/luci
+    ["https://github.com/immortalwrt/luci.git openwrt-24.10"]="applications/luci-app-ddns-go -> ."
+    # 保留：luci-app-dockerman 仍从 kenzok8 拉取
+    ["https://github.com/kenzok8/openwrt-packages master"]="luci-app-dockerman -> ."
 )
 
 ROOT_DIR="$(pwd)"
-FEEDS_FILE="feeds.conf.default" # 如果你使用的是 feeds.conf，可以改成 "feeds.conf"
+FEEDS_FILE="feeds.conf.default"
 
 # ==================== 函数定义 ====================
 clone_full_repo() {
