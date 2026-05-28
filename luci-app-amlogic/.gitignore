@@ -1,7 +1,0 @@
-!.gitignore
-.DS_Store
-npm-debug.log*
-*.rej
-*.orig
-*~
-\#*#
