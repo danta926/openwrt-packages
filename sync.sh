@@ -27,7 +27,7 @@ declare -A SPARSE_ITEMS=(
     # 新增：ddns-go 来自 immortalwrt/packages
     ["https://github.com/immortalwrt/packages.git openwrt-25.12"]="net/ddns-go -> ."
     # 新增：luci-app-ddns-go 来自 immortalwrt/luci
-    ["https://github.com/immortalwrt/luci.git openwrt-25.12"]="applications/luci-app-ddns-go -> ."
+    ["https://github.com/immortalwrt/luci.git openwrt-24.10"]="applications/luci-app-ddns-go -> ."
     # 保留：luci-app-dockerman 仍从 kenzok8 拉取
     ["https://github.com/kenzok8/openwrt-packages master"]="luci-app-dockerman -> ."
 )
